@@ -1,0 +1,327 @@
+.cafe-animado {
+  animation: shake 2s, fill-cafe 2s forwards;
+  display: inline-block;
+  position: relative;
+}
+@keyframes shake {
+  0% {
+    transform: rotate(0deg);
+  }
+  5% {
+    transform: rotate(-10deg);
+  }
+  10% {
+    transform: rotate(10deg);
+  }
+  15% {
+    transform: rotate(-10deg);
+  }
+  20% {
+    transform: rotate(10deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  30% {
+    transform: rotate(10deg);
+  }
+  35% {
+    transform: rotate(-10deg);
+  }
+  40% {
+    transform: rotate(10deg);
+  }
+  45% {
+    transform: rotate(-10deg);
+  }
+  50% {
+    transform: rotate(10deg);
+  }
+  55% {
+    transform: rotate(-10deg);
+  }
+  60% {
+    transform: rotate(-10deg);
+  }
+  65% {
+    transform: rotate(10deg);
+  }
+  70% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+  80% {
+    transform: rotate(10deg);
+  }
+  85% {
+    transform: rotate(-10deg);
+  }
+  90% {
+    transform: rotate(10deg);
+  }
+  95% {
+    transform: rotate(-10deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@keyframes fill-cafe {
+  0% {
+    filter: grayscale(0) brightness(0);
+    opacity: 0.2;
+  }
+  80% {
+    filter: grayscale(0) brightness(1.2);
+    opacity: 0.8;
+  }
+  100% {
+    filter: grayscale(0) brightness(1);
+    opacity: 1;
+  }
+}
+.plus-one {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  transform: translateX(-50%);
+  color: #16a34a;
+  font-weight: bold;
+  font-size: 1.2rem;
+  opacity: 0;
+  animation: plusOneAnim 2s forwards;
+  pointer-events: none;
+  text-shadow: 0 2px 8px #fff, 0 1px 2px #0002;
+}
+@keyframes plusOneAnim {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px) scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(1);
+  }
+}
+
+.estrella-reset {
+  display: inline-block;
+  animation: estrellaResetAnim 0.8s forwards;
+}
+@keyframes estrellaResetAnim {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+}
+
+.estrella-empty-in {
+  display: inline-block;
+  animation: estrellaEmptyInAnim 0.8s forwards;
+}
+@keyframes estrellaEmptyInAnim {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Junta y agranda */
+.cafes-juntandose {
+  display: flex;
+  gap: 1.2em;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  z-index: 10;
+  animation: juntarCafes 2.5s forwards; /* Duración mayor para animación más lenta */
+}
+
+@keyframes juntarCafes {
+  0% {
+    gap: 0.5em; /* Espacio inicial entre cafés */
+  }
+  80% {
+    gap: 0; /* Ya casi juntos */
+  }
+  100% {
+    gap: 0; /* Se superponen totalmente, parecen uno solo */
+  }
+}
+
+/* Shake */
+.cafes-shake {
+  animation: cafesShakeAnim 1s;
+}
+
+@keyframes cafesShakeAnim {
+  0% {
+    transform: rotate(0deg);
+    gap: 0;
+  }
+  20% {
+    transform: rotate(-10deg);
+    gap: 0;
+  }
+  40% {
+    transform: rotate(10deg);
+    gap: 0;
+  }
+  60% {
+    transform: rotate(-10deg);
+    gap: 0;
+  }
+  80% {
+    transform: rotate(10deg);
+    gap: 0;
+  }
+  100% {
+    transform: rotate(0deg);
+    gap: 0;
+  }
+}
+
+/* Pop y caída */
+.cafes-pop {
+  animation: cafesPopFallAnim 2s forwards;
+}
+
+@keyframes cafesPopFallAnim {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+    gap: 0;
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(20px) rotate(10deg);
+    gap: 0;
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(100px) rotate(-10deg);
+    gap: 0;
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(200px) rotate(10deg);
+    gap: 0;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) translateY(550px) rotate(60deg);
+    gap: 0;
+  }
+}
+
+.cafes-reset-vacio {
+  display: flex;
+  gap: 0.2em;
+  justify-content: center;
+  align-items: center;
+  animation: cafesResetVacioAnim 0.8s;
+}
+
+@keyframes cafesResetVacioAnim {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Contenedor para juntar y superponer cafés */
+.cafes-juntandose-abs {
+  position: relative;
+  width: 230px; /* 5 iconos de 40px + espacio */
+  height: 60px;
+  margin: 0 auto;
+  z-index: 10;
+}
+
+/* Cada café en su posición inicial */
+.cafes-juntandose-abs .cafe-icon {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) scale(1);
+}
+
+/* Animación de juntar */
+.cafes-juntandose-abs.juntar .cafe-icon {
+  animation: cafeToCenter 2.5s forwards;
+}
+
+.cafes-juntandose-abs.juntar .cafe-icon.cafe-0 { left: 0%;   animation-delay: 0s; }
+.cafes-juntandose-abs.juntar .cafe-icon.cafe-1 { left: 25%;  animation-delay: 0.05s; }
+.cafes-juntandose-abs.juntar .cafe-icon.cafe-2 { left: 50%;  animation-delay: 0.1s; }
+.cafes-juntandose-abs.juntar .cafe-icon.cafe-3 { left: 75%;  animation-delay: 0.15s; }
+.cafes-juntandose-abs.juntar .cafe-icon.cafe-4 { left: 100%; animation-delay: 0.2s; }
+
+@keyframes cafeToCenter {
+  0% {
+    transform: translateY(-50%) scale(1);
+  }
+  80% {
+    left: 50%;
+    transform: translate(-50%, -50%) scale(1.8);
+  }
+  100% {
+    left: 50%;
+    transform: translate(-50%, -50%) scale(2.8);
+  }
+}
+
+/* Shake */
+.cafes-juntandose-abs.shake .cafe-icon {
+  animation: cafesShakeAbsAnim 1s;
+}
+
+@keyframes cafesShakeAbsAnim {
+  0% { transform: translate(-50%, -50%) scale(2.8) rotate(0deg);}
+  20% { transform: translate(-50%, -50%) scale(2.8) rotate(-10deg);}
+  40% { transform: translate(-50%, -50%) scale(2.8) rotate(10deg);}
+  60% { transform: translate(-50%, -50%) scale(2.8) rotate(-10deg);}
+  80% { transform: translate(-50%, -50%) scale(2.8) rotate(10deg);}
+  100% { transform: translate(-50%, -50%) scale(2.8) rotate(0deg);}
+}
+
+/* Pop y caída */
+.cafes-juntandose-abs.pop .cafe-icon {
+  animation: cafesPopAbsFallAnim 2s forwards;
+}
+
+@keyframes cafesPopAbsFallAnim {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(2.8) rotate(0deg);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(3.2) rotate(-10deg) translateY(-10px);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(3.5) rotate(10deg) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 350px) scale(0.5) rotate(60deg);
+  }
+}

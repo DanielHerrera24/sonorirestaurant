@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Anzeigen Grotesk";
+  src: local("Anzeigen Grotesk"), local("Anzeigen-Grotesk"),
+    url("/Fonts/Anzeigen Grotesk D Regular.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+:root {
+  --color-principal: #f6e71d;
+  --color-principalHover: #dccd06;
+  --color-principalOscuro: #b8ad18;
+  --color-principalClaro: #fef794;
+  --color-secundario: #fbfbfb;
+  --color-secundarioHover: #a9a9a9;
+  --color-secundarioClaro: #ffffff;
+  --color-navBar: #181818;
+  --color-loNuevo: #22c55e;
+  --color-loNuevoHover: #16a34a;
+  --color-promocion: #dc2626;
+  --color-promocionHover: #a51b1b;
+  --color-fondo: #181818;
+  --color-negro: #000000;
+  --color-blanco: #ffffff;
+}
+
+@keyframes fadeInSticky {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fadeOutSticky {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+.fade-in-sticky {
+  animation: fadeInSticky 0.4s ease;
+}
+.fade-out-sticky {
+  animation: fadeOutSticky 0.3s ease;
+}

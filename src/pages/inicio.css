@@ -1,0 +1,21 @@
+.inicio-bg {
+  background: linear-gradient(135deg, #181818 0%, #F6E71D 100%);
+  min-height: 100vh;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(30px);}
+  to { opacity: 1; transform: translateY(0);}
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-40px);}
+  to { opacity: 1; transform: translateY(0);}
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(40px);}
+  to { opacity: 1; transform: translateY(0);}
+}
+
+.animate-fade-in { animation: fade-in 1s ease; }
+.animate-slide-down { animation: slide-down 1s cubic-bezier(.4,2,.6,1); }
+.animate-slide-up { animation: slide-up 1s cubic-bezier(.4,2,.6,1); }
