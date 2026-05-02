@@ -126,12 +126,43 @@ export default function RegistrarVisita({
     puntosGanados: 0,
   });
 
+  const cerrarScanner = async ({ resetState = true } = {}) => {
+    const instanciaScanner = scanner.current;
+
+    if (!instanciaScanner) {
+      if (resetState) {
+        setScanning(false);
+      }
+      return;
+    }
+
+    try {
+      await instanciaScanner.stop();
+    } catch {
+      // Ignorar estados donde el scanner ya fue detenido.
+    }
+
+    try {
+      await instanciaScanner.clear();
+    } catch {
+      // Ignorar errores al limpiar el contenedor si ya no existe.
+    }
+
+    scanner.current = null;
+
+    if (qrRef.current) {
+      qrRef.current.innerHTML = "";
+    }
+
+    if (resetState) {
+      setScanning(false);
+    }
+  };
+
   // Limpia estados al desmontar
   useEffect(() => {
     return () => {
-      if (scanner.current) {
-        scanner.current.stop().catch(() => {});
-      }
+      void cerrarScanner({ resetState: false });
     };
   }, []);
 
@@ -476,6 +507,10 @@ export default function RegistrarVisita({
 
   // Escaneo QR
   const startScanner = () => {
+    if (scanner.current || scanning) {
+      return;
+    }
+
     setScanning(true);
     scanner.current = new Html5Qrcode("qr-reader");
     let yaProcesado = false;
@@ -486,8 +521,7 @@ export default function RegistrarVisita({
         async (uidEscaneado) => {
           if (!uidEscaneado || yaProcesado) return;
           yaProcesado = true;
-          await scanner.current.stop();
-          setScanning(false);
+          await cerrarScanner();
           verificarTarjetaYRegistrar(uidEscaneado);
         },
         (err) => {
@@ -496,7 +530,7 @@ export default function RegistrarVisita({
       )
       .catch((err) => {
         toast.error("❌ Error al iniciar cámara.");
-        setScanning(false);
+        void cerrarScanner();
       });
   };
 
@@ -579,14 +613,11 @@ export default function RegistrarVisita({
                 {scanning && (
                   <button
                     onClick={async () => {
-                      if (scanner.current) {
-                        try {
-                          await scanner.current.stop();
-                          setScanning(false);
-                          toast.info("Escaneo cancelado.");
-                        } catch (err) {
-                          toast.error("Error al cancelar escaneo");
-                        }
+                      try {
+                        await cerrarScanner();
+                        toast.info("Escaneo cancelado.");
+                      } catch (err) {
+                        toast.error("Error al cancelar escaneo");
                       }
                     }}
                     className="mt-2 rounded-full bg-[var(--color-promocion)] px-6 py-3 text-[var(--color-blanco)] hover:bg-[var(--color-promocionHover)]"

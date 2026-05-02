@@ -70,6 +70,39 @@ export default function CanjearRecompensas() {
     metodosDisponibles.find((item) => item.id === metodo) ||
     metodosDisponibles[0];
 
+  const cerrarScanner = async ({ resetState = true } = {}) => {
+    const instanciaScanner = scanner.current;
+
+    if (!instanciaScanner) {
+      if (resetState) {
+        setScanning(false);
+      }
+      return;
+    }
+
+    try {
+      await instanciaScanner.stop();
+    } catch {
+      // Ignorar estados donde el scanner ya fue detenido.
+    }
+
+    try {
+      await instanciaScanner.clear();
+    } catch {
+      // Ignorar errores al limpiar el contenedor si ya no existe.
+    }
+
+    scanner.current = null;
+
+    if (qrRef.current) {
+      qrRef.current.innerHTML = "";
+    }
+
+    if (resetState) {
+      setScanning(false);
+    }
+  };
+
   // Normaliza teléfono: quita espacios/caracteres y asegura prefijo + (por defecto +52)
   const normalizarPhone = (input) => {
     if (!input) return "";
@@ -236,6 +269,10 @@ export default function CanjearRecompensas() {
   };
 
   const startScanner = () => {
+    if (scanner.current || scanning) {
+      return;
+    }
+
     setScanning(true);
     scanner.current = new Html5Qrcode("qr-reader-canjear");
 
@@ -252,8 +289,7 @@ export default function CanjearRecompensas() {
           if (!uidEscaneado || yaProcesado) return;
           yaProcesado = true;
 
-          await scanner.current.stop();
-          setScanning(false);
+          await cerrarScanner();
 
           // usar búsqueda robusta para el valor escaneado
           await buscarClientePorUid(uidEscaneado);
@@ -264,16 +300,14 @@ export default function CanjearRecompensas() {
       )
       .catch((err) => {
         console.error("Error al iniciar escáner", err);
-        setScanning(false);
+        void cerrarScanner();
         toast.error("No fue posible iniciar el escáner.");
       });
   };
 
   useEffect(() => {
     return () => {
-      if (scanner.current) {
-        scanner.current.stop().catch(() => {});
-      }
+      void cerrarScanner({ resetState: false });
     };
   }, []);
 
@@ -407,13 +441,10 @@ export default function CanjearRecompensas() {
               {scanning && (
                 <button
                   onClick={async () => {
-                    if (scanner.current) {
-                      try {
-                        await scanner.current.stop();
-                        setScanning(false);
-                      } catch (err) {
-                        console.error("Error al cancelar escaneo", err);
-                      }
+                    try {
+                      await cerrarScanner();
+                    } catch (err) {
+                      console.error("Error al cancelar escaneo", err);
                     }
                   }}
                   className="rounded-full bg-[var(--color-promocion)] px-6 py-3 text-[var(--color-blanco)] hover:bg-[var(--color-promocionHover)] transition"
