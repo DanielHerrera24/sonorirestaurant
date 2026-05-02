@@ -60,10 +60,12 @@ export default function Register() {
         await setDoc(doc(db, "clientes", uidPersonalizado), {
           nombre: user.displayName || "",
           correo: user.email,
-          estrellas: 1,
+          puntos: 0,
+          puntosAcumulados: 0,
           ultimaVisita: null,
           uid: uidPersonalizado,
           authUid: user.uid,
+          recompensas: [],
           recompensasCanjeadas: 0,
           creado: serverTimestamp(),
         });
@@ -114,11 +116,7 @@ export default function Register() {
           Tu tarjeta ha sido creada.
           <br />
           <span className="text-[var(--color-principal)]">
-            ¡Ya puedes acumular estrellas y canjear recompensas!
-          </span>
-          <br />
-          <span className="text-yellow-300 font-bold text-xl block mt-4">
-            ⭐ ¡Recibiste tu primera estrella por registrarte!
+            ¡Ya puedes acumular puntos y canjear recompensas!
           </span>
         </p>
       </div>

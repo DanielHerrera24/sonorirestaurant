@@ -37,6 +37,7 @@ export default function PhoneAuthForm({
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [nombre, setNombre] = useState("");
 
   // Actualiza phone cada vez que cambian país o número local
@@ -45,19 +46,39 @@ export default function PhoneAuthForm({
   }, [pais, numeroLocal]);
 
   useEffect(() => {
-    if (!window.recaptchaVerifier && auth) {
-      try {
-        window.recaptchaVerifier = new RecaptchaVerifier(
-          "recaptcha-container",
-          { size: "invisible" },
-          auth
-        );
-        window.recaptchaVerifier.render();
-      } catch (error) {
-        console.error("Error al inicializar reCAPTCHA:", error);
+    return () => {
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
+        window.recaptchaVerifier = null;
       }
-    }
+
+      const recaptchaContainer = document.getElementById("recaptcha-container");
+      if (recaptchaContainer) {
+        recaptchaContainer.innerHTML = "";
+      }
+    };
   }, []);
+
+  const getRecaptchaVerifier = async () => {
+    if (window.recaptchaVerifier) {
+      return window.recaptchaVerifier;
+    }
+
+    const recaptchaContainer = document.getElementById("recaptcha-container");
+    if (!recaptchaContainer) {
+      throw new Error("No se encontró el contenedor de reCAPTCHA.");
+    }
+
+    recaptchaContainer.innerHTML = "";
+
+    const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+      size: "invisible",
+    });
+
+    await verifier.render();
+    window.recaptchaVerifier = verifier;
+    return verifier;
+  };
 
   const generarUidUnico = async () => {
     let uid,
@@ -86,15 +107,27 @@ export default function PhoneAuthForm({
       return;
     }
     setLoading(true);
+    setLoadingMessage("Enviando código por SMS...");
     try {
+      const recaptchaVerifier = await getRecaptchaVerifier();
       const confirmationResult = await signInWithPhoneNumber(
         auth,
         formattedPhone,
-        window.recaptchaVerifier
+        recaptchaVerifier
       );
       setConfirmation(confirmationResult);
       toast.success("Código enviado por SMS");
     } catch (error) {
+      if (window.recaptchaVerifier) {
+        window.recaptchaVerifier.clear();
+        window.recaptchaVerifier = null;
+      }
+
+      const recaptchaContainer = document.getElementById("recaptcha-container");
+      if (recaptchaContainer) {
+        recaptchaContainer.innerHTML = "";
+      }
+
       setError(error.message);
       if (error.code === "auth/too-many-requests") {
         toast.error(
@@ -103,8 +136,10 @@ export default function PhoneAuthForm({
       } else {
         toast.error("Error al enviar el código");
       }
+    } finally {
+      setLoading(false);
+      setLoadingMessage("");
     }
-    setLoading(false);
   };
 
   // handleStart usa checkPhone antes de enviar el SMS
@@ -112,6 +147,8 @@ export default function PhoneAuthForm({
     if (e && e.preventDefault) e.preventDefault();
     setError("");
     if (checkPhone) {
+      setLoading(true);
+      setLoadingMessage("Validando número...");
       try {
         const res = await checkPhone(phone.trim());
         if (!res.exists) {
@@ -125,6 +162,9 @@ export default function PhoneAuthForm({
           setError(err.message || "Error al comprobar número");
         }
         return;
+      } finally {
+        setLoading(false);
+        setLoadingMessage("");
       }
     }
     // si existe o no se pasó checkPhone, continuar y enviar SMS
@@ -145,6 +185,7 @@ export default function PhoneAuthForm({
     e.preventDefault();
     setError("");
     setLoading(true);
+    setLoadingMessage("Verificando código...");
     try {
       const result = await confirmation.confirm(code);
       const user = result.user;
@@ -212,7 +253,6 @@ export default function PhoneAuthForm({
         await setDoc(doc(db, "clientes", uidPersonalizado), {
           nombre: needsName ? nombreNuevo : nombre,
           telefono: formattedPhone,
-          estrellas: 1,
           ultimaVisita: null,
           uid: uidPersonalizado,
           authUid: user.uid,
@@ -232,12 +272,22 @@ export default function PhoneAuthForm({
         toast.error(error.message || "Error al verificar código");
       }
       setError(error.message || "Código incorrecto");
+    } finally {
+      setLoading(false);
+      setLoadingMessage("");
     }
-    setLoading(false);
   };
 
   return (
-    <div className="flex flex-col items-center w-full">
+    <div className="relative flex flex-col items-center w-full">
+      {loading && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-2xl bg-black/70 backdrop-blur-sm">
+          <div className="h-12 w-12 rounded-full border-4 border-[var(--color-principal)] border-t-transparent animate-spin"></div>
+          <p className="text-center text-lg uppercase tracking-wide text-[var(--color-principal)]">
+            {loadingMessage || "Procesando..."}
+          </p>
+        </div>
+      )}
       {!confirmation ? (
         <form
           onSubmit={needsName ? handleSendAfterName : handleStart}
@@ -254,6 +304,7 @@ export default function PhoneAuthForm({
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 required
+                disabled={loading}
                 className="w-full text-xl px-2 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-[var(--color-principalClaro)]"
               />
             </div>
@@ -282,6 +333,7 @@ export default function PhoneAuthForm({
               <select
                 value={pais}
                 onChange={(e) => setPais(e.target.value)}
+                disabled={loading}
                 className="border rounded px-1 py-2 bg-white text-xl"
                 style={{ minWidth: 60 }}
               >
@@ -299,6 +351,7 @@ export default function PhoneAuthForm({
                   setNumeroLocal(val);
                 }}
                 required
+                disabled={loading}
                 className="w-full text-xl px-2 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-[var(--color-principalClaro)]"
               />
             </div>
@@ -314,6 +367,7 @@ export default function PhoneAuthForm({
                 placeholder="Tu nombre"
                 value={nombreNuevo}
                 onChange={(e) => setNombreNuevo(e.target.value)}
+                disabled={loading}
                 className="w-full text-xl px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-[var(--color-principalClaro)]"
               />
             </div>
@@ -343,6 +397,7 @@ export default function PhoneAuthForm({
               value={code}
               onChange={(e) => setCode(e.target.value)}
               required
+              disabled={loading}
               className="w-full text-xl px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-[var(--color-principalClaro)] bg-gray-50"
             />
           </div>

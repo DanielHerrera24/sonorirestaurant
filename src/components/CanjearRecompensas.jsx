@@ -5,18 +5,44 @@ import {
   doc,
   getDoc,
   updateDoc,
-  arrayRemove,
-  arrayUnion,
   addDoc,
   collection,
   getDocs,
   query,
   where,
+  increment,
 } from "firebase/firestore";
 import { toast } from "react-toastify";
+import {
+  RECOMPENSAS_POR_PUNTOS,
+  getMissingPoints,
+} from "../data/recompensasPorPuntos";
+import { IoClose } from "react-icons/io5";
 
 export default function CanjearRecompensas() {
-  const [uidCliente, setUidCliente] = useState("");
+  const metodosDisponibles = [
+    {
+      id: "qr",
+      label: "Escanear QR",
+      description: "Lee la tarjeta digital y carga al cliente al instante.",
+    },
+    {
+      id: "telefono",
+      label: "Por teléfono",
+      description: "Encuentra al cliente por su número celular.",
+    },
+    {
+      id: "tarjeta",
+      label: "Por tarjeta",
+      description: "Busca una tarjeta física manualmente.",
+    },
+    {
+      id: "busqueda",
+      label: "Búsqueda general",
+      description: "Ubica clientes por nombre, teléfono o correo.",
+    },
+  ];
+
   const [cliente, setCliente] = useState(null);
   const [scanning, setScanning] = useState(false);
   const qrRef = useRef(null);
@@ -38,9 +64,11 @@ export default function CanjearRecompensas() {
   const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
   const [buscandoGeneral, setBuscandoGeneral] = useState(false);
   const [buscarPhone, setBuscarPhone] = useState("+52");
-  const [clienteEncontrado, setClienteEncontrado] = useState(undefined); // null: no existe, objeto: encontrado, undefined: sin buscar
-  const [nombreNuevo, setNombreNuevo] = useState("");
   const [loadingTelefono, setLoadingTelefono] = useState(false);
+  const puntosCliente = Number(cliente?.puntos || 0);
+  const metodoActivo =
+    metodosDisponibles.find((item) => item.id === metodo) ||
+    metodosDisponibles[0];
 
   // Normaliza teléfono: quita espacios/caracteres y asegura prefijo + (por defecto +52)
   const normalizarPhone = (input) => {
@@ -99,44 +127,41 @@ export default function CanjearRecompensas() {
     }
   };
 
-  // Búsqueda flexible desde el input: si empieza con + lo tratamos como teléfono, si es largo o tiene + usamos teléfono, si es 8 dígitos intentamos UID/docId
-  const buscarClienteFlexible = async () => {
-    setCliente(null);
-    const input = (uidCliente || "").trim();
-    if (!input) {
-      toast.error("Ingresa UID o número de teléfono.");
+  const buscarClientesGeneral = async () => {
+    const termino = busqueda.trim().toLowerCase();
+    if (!termino) {
+      toast.error("Ingresa un nombre, teléfono o correo para buscar.");
       return;
     }
 
-    // Decide heurística: si contiene + o es mayor a 8 caracteres -> teléfono
-    const puedeSerTelefono =
-      input.startsWith("+") || input.length > 8 || /[^\d]/.test(input);
-    if (puedeSerTelefono) {
-      const telefono = normalizarPhone(input);
-      try {
-        const q = query(
-          collection(db, "clientes"),
-          where("telefono", "==", telefono),
-        );
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          const d = snap.docs[0];
-          setCliente({ ...d.data(), id: d.id });
-          toast.success("Cliente encontrado (por teléfono)");
-          return;
-        } else {
-          toast.info("No se encontró cliente con ese número.");
-          return;
-        }
-      } catch (err) {
-        console.error("buscarClienteFlexible (tel):", err);
-        toast.error("Error al buscar por teléfono.");
-        return;
-      }
-    }
+    setBuscandoGeneral(true);
+    try {
+      const snap = await getDocs(collection(db, "clientes"));
+      const coincidencias = snap.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .filter((clienteItem) => {
+          const nombre = String(clienteItem.nombre || "").toLowerCase();
+          const telefono = String(clienteItem.telefono || "").toLowerCase();
+          const correo = String(clienteItem.correo || "").toLowerCase();
 
-    // Si llegamos aquí, intentamos por doc id / uid personalizado
-    await buscarClientePorUid(input);
+          return (
+            nombre.includes(termino) ||
+            telefono.includes(termino) ||
+            correo.includes(termino)
+          );
+        })
+        .slice(0, 15);
+
+      setResultadosBusqueda(coincidencias);
+      if (coincidencias.length === 0) {
+        toast.info("No se encontraron clientes con ese criterio.");
+      }
+    } catch (error) {
+      console.error("buscarClientesGeneral:", error);
+      toast.error("Error al realizar la búsqueda general.");
+    } finally {
+      setBuscandoGeneral(false);
+    }
   };
 
   const canjear = async (recompensa, detalles = {}) => {
@@ -144,27 +169,24 @@ export default function CanjearRecompensas() {
       toast.error("No hay cliente seleccionado.");
       return;
     }
+
+    if (puntosCliente < recompensa.puntos) {
+      toast.error(
+        "El cliente no tiene puntos suficientes para esta recompensa.",
+      );
+      return;
+    }
+
     try {
       const ref = doc(db, "clientes", cliente.id);
+      const puntosRestantes = puntosCliente - recompensa.puntos;
 
-      // Remueve recompensa original
       await updateDoc(ref, {
-        recompensas: arrayRemove(recompensa),
-      });
-
-      const recompensaCanjeada = {
-        ...recompensa,
-        canjeado: true,
-        fechaCanje: new Date().toISOString(),
-        detallesCanje: { ...detalles, tipoCanje },
-      };
-
-      // Agregar la recompensa canjeada y feedback
-      await updateDoc(ref, {
-        recompensas: arrayUnion(recompensaCanjeada),
+        puntos: puntosRestantes,
+        recompensasCanjeadas: increment(1),
         feedback: {
           tipo: "success",
-          mensaje: "✅ Recompensa canjeada correctamente.",
+          mensaje: `✅ Canjeaste ${recompensa.nombre} por ${recompensa.puntos} puntos.`,
           timestamp: Date.now(),
         },
       });
@@ -175,18 +197,25 @@ export default function CanjearRecompensas() {
         nombre: cliente.nombre || "",
         correo: cliente.correo || "",
         fecha: new Date(),
-        codigo: recompensa.codigo,
-        mensaje: recompensa.mensaje,
+        recompensaId: recompensa.id,
+        codigo: recompensa.id,
+        mensaje: recompensa.nombre,
         canjeado: true,
         fechaCanje: new Date(),
-        detallesCanje: detalles,
+        puntosCanjeados: recompensa.puntos,
+        detallesCanje: {
+          ...detalles,
+          tipoCanje,
+          recompensaNombre: recompensa.nombre,
+        },
       });
 
       // Actualizar cliente localmente en UI
-      const nuevasRecompensas = (cliente.recompensas || [])
-        .filter((r) => r.codigo !== recompensa.codigo)
-        .concat(recompensaCanjeada);
-      setCliente({ ...cliente, recompensas: nuevasRecompensas });
+      setCliente({
+        ...cliente,
+        puntos: puntosRestantes,
+        recompensasCanjeadas: (cliente.recompensasCanjeadas || 0) + 1,
+      });
 
       toast.success("Recompensa canjeada correctamente.");
     } catch (err) {
@@ -226,7 +255,6 @@ export default function CanjearRecompensas() {
           await scanner.current.stop();
           setScanning(false);
 
-          setUidCliente(uidEscaneado);
           // usar búsqueda robusta para el valor escaneado
           await buscarClientePorUid(uidEscaneado);
         },
@@ -284,7 +312,6 @@ export default function CanjearRecompensas() {
 
   const buscarClientePorTelefono = async () => {
     setLoadingTelefono(true);
-    setClienteEncontrado(undefined);
     try {
       const telefono = normalizarPhone(buscarPhone);
       const q = query(
@@ -294,549 +321,426 @@ export default function CanjearRecompensas() {
       const snap = await getDocs(q);
       if (!snap.empty) {
         const d = snap.docs[0];
-        setClienteEncontrado({ ...d.data(), id: d.id });
         setCliente({ ...d.data(), id: d.id });
         toast.success("Cliente encontrado.");
       } else {
-        setClienteEncontrado(null);
         setCliente(null);
         toast.info("No se encontró cliente con ese número.");
       }
     } catch (err) {
+      console.error("buscarClientePorTelefono:", err);
       toast.error("Error al buscar cliente.");
     } finally {
       setLoadingTelefono(false);
     }
   };
 
-  const crearClientePorTelefono = async (nombre = "") => {
-    setLoadingTelefono(true);
-    try {
-      const telefono = normalizarPhone(buscarPhone);
-      const docRef = await addDoc(collection(db, "clientes"), {
-        nombre,
-        telefono,
-        creado: new Date(),
-        recompensas: [],
-        estrellas: 0,
-      });
-      const snap = await getDoc(docRef);
-      setClienteEncontrado({ ...snap.data(), id: docRef.id });
-      setCliente({ ...snap.data(), id: docRef.id });
-      toast.success("Cliente creado correctamente.");
-    } catch (err) {
-      toast.error("Error al crear cliente.");
-    } finally {
-      setLoadingTelefono(false);
-    }
-  };
-
   return (
-    <div className="bg-[var(--color-fondo)] p-4 mt-6 rounded shadow-md max-w-md mx-auto">
-      <h2 className="text-3xl uppercase mb-2 text-center text-[var(--color-principal)]">
-        Canjear recompensa
-      </h2>
-
-      <div className="grid grid-cols-2 gap-2 justify-center mb-4">
-        <button
-          type="button"
-          className={`px-3 py-1 rounded-full border transition ${
-            metodo === "qr"
-              ? "bg-[var(--color-principal)] text-black uppercase text-xl border-[var(--color-principal)]"
-              : "bg-white text-black uppercase text-xl border-[var(--color-principalClaro)]"
-          }`}
-          onClick={() => setMetodo("qr")}
-        >
-          Escanear QR
-        </button>
-        <button
-          type="button"
-          className={`px-3 py-1 rounded-full border transition ${
-            metodo === "telefono"
-              ? "bg-[var(--color-principal)] text-black uppercase text-xl border-[var(--color-principal)]"
-              : "bg-white text-black uppercase text-xl border-[var(--color-principalClaro)]"
-          }`}
-          onClick={() => setMetodo("telefono")}
-        >
-          Por teléfono
-        </button>
-        <button
-          type="button"
-          className={`px-3 py-1 rounded-full border transition ${
-            metodo === "tarjeta"
-              ? "bg-[var(--color-principal)] text-black uppercase text-xl border-[var(--color-principal)]"
-              : "bg-white text-black uppercase text-xl border-[var(--color-principalClaro)]"
-          }`}
-          onClick={() => setMetodo("tarjeta")}
-        >
-          Por tarjeta
-        </button>
-        <button
-          type="button"
-          className={`px-3 py-1 rounded-full border transition ${
-            metodo === "busqueda"
-              ? "bg-[var(--color-principal)] text-black uppercase text-xl border-[var(--color-principal)]"
-              : "bg-white text-black uppercase text-xl border-[var(--color-principalClaro)]"
-          }`}
-          onClick={() => setMetodo("busqueda")}
-        >
-          Búsqueda general
-        </button>
+    <div className="mx-auto mt-4 w-full max-w-5xl overflow-hidden rounded-[1.75rem] border border-black/10 bg-[var(--color-fondo)] shadow-2xl">
+      <div className="border-b border-white/10 bg-gradient-to-r from-black via-[#171717] to-[#22310c] px-4 py-5 text-left md:px-6">
+        <span className="inline-flex rounded-full border border-[var(--color-loNuevo)]/20 bg-[var(--color-loNuevo)]/10 px-4 py-1 text-sm uppercase tracking-[0.24em] text-[var(--color-loNuevo)]">
+          Operación de canje
+        </span>
+        <h2 className="mt-4 text-4xl uppercase text-[var(--color-principal)]">
+          Canjear recompensa
+        </h2>
+        <p className="mt-2 max-w-2xl text-lg text-white/70">
+          Busca al cliente, valida su saldo y registra el canje.
+        </p>
       </div>
 
-      {/* QR */}
-      {metodo === "qr" && (
-        <div className="flex flex-col items-center gap-2 mb-2">
-          {!scanning && (
-            <button
-              onClick={startScanner}
-              className="bg-[var(--color-principal)] text-[var(--color-negro)] text-lg uppercase px-4 py-2 rounded hover:bg-[var(--color-principalHover)] transition"
-            >
-              Escanear código QR
-            </button>
-          )}
-          {scanning && (
-            <button
-              onClick={async () => {
-                if (scanner.current) {
-                  try {
-                    await scanner.current.stop();
-                    setScanning(false);
-                  } catch (err) {
-                    console.error("Error al cancelar escaneo", err);
-                  }
-                }
-              }}
-              className="bg-[var(--color-promocion)] text-[var(--color-blanco)] px-4 py-2 rounded hover:bg-[var(--color-promocionHover)] transition"
-            >
-              Cancelar escaneo
-            </button>
-          )}
-          <div
-            id="qr-reader"
-            ref={qrRef}
-            className={`w-full mx-auto ${scanning ? "my-4" : "hidden"}`}
-          />
-        </div>
-      )}
+      <div className="">
+        <div className=" bg-white/[0.04] p-4 text-left shadow-lg">
+          <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+            Método activo
+          </p>
+          <h3 className="mt-2 text-3xl text-[var(--color-principal)]">
+            {metodoActivo.label}
+          </h3>
+          <p className="mt-1 max-w-2xl text-white/70">
+            {metodoActivo.description}
+          </p>
 
-      {/* Teléfono */}
-      {metodo === "telefono" && (
-        <div className="w-full mt-4 mb-4">
-          <label className="text-lg uppercase text-[var(--color-principal)] block mb-1">
-            Buscar por número de teléfono
-          </label>
-          <div className="w-full flex gap-1">
-            <input
-              type="tel"
-              placeholder="+526531231234"
-              value={buscarPhone}
-              onChange={(e) => {
-                let val = e.target.value.replace(/\s/g, "");
-                if (!val.startsWith("+")) val = "+52" + val.replace(/\D/g, "");
-                setBuscarPhone(val);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === " ") e.preventDefault();
-              }}
-              className="w-3/4 border px-3 py-1 rounded"
-              disabled={scanning}
-            />
-            <button
-              onClick={buscarClientePorTelefono}
-              disabled={loadingTelefono || scanning}
-              className="w-1/4 bg-[var(--color-secundario)] text-[var(--color-negro)] font-medium px-3 py-1 rounded hover:bg-[var(--color-secundarioHover)] disabled:opacity-50"
-            >
-              {loadingTelefono ? "Buscando..." : "Buscar"}
-            </button>
+          <div className="mt-4 grid gap-3 grid-cols-2 xl:grid-cols-4">
+            {metodosDisponibles.map((item) => {
+              const activo = metodo === item.id;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`rounded-2xl border px-4 py-4 text-left transition-all duration-200 ${
+                    activo
+                      ? "border-[var(--color-principal)] bg-[var(--color-principal)] text-[var(--color-negro)] shadow-lg"
+                      : "border-white/10 bg-black/25 text-white hover:border-white/20 hover:bg-white/[0.06]"
+                  }`}
+                  onClick={() => setMetodo(item.id)}
+                >
+                  <span className="block text-xl uppercase">{item.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
-      )}
 
-      {/* Por tarjeta */}
-      {metodo === "tarjeta" && (
-        <div className="flex flex-col gap-2 mb-4">
-          <label className="tracking-wider text-[var(--color-blanco)]">
-            Ingresa número de tarjeta física:
-          </label>
-          <input
-            type="text"
-            value={manualUid}
-            onChange={(e) => setManualUid(e.target.value)}
-            placeholder="12345678"
-            className="flex-1 border px-3 py-1 rounded"
-            disabled={scanning}
-          />
-          <div className="flex gap-2">
-            <button
-              onClick={async () => {
-                if (!manualUid) {
-                  toast.error("Ingresa el número de tarjeta.");
-                  return;
-                }
-                await buscarClientePorUid(manualUid);
-              }}
-              className="bg-[var(--color-principal)] w-full text-[var(--color-negro)] px-4 py-1 rounded hover:bg-[var(--color-secundarioHover)]"
-              disabled={scanning}
-            >
-              Buscar tarjeta
-            </button>
+        {/* QR */}
+        {metodo === "qr" && (
+          <div className=" bg-black/20 p-4 md:p-5">
+            <div className="mb-4 text-left">
+              <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+                Escaneo en vivo
+              </p>
+              <p className="mt-1 text-white/75">
+                Escanea el QR del cliente para abrir su saldo de puntos y sus
+                recompensas disponibles.
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              {!scanning && (
+                <button
+                  onClick={startScanner}
+                  className="rounded-full bg-[var(--color-principal)] px-6 py-3 text-lg uppercase text-[var(--color-negro)] hover:bg-[var(--color-principalHover)] transition"
+                >
+                  Escanear código QR
+                </button>
+              )}
+              {scanning && (
+                <button
+                  onClick={async () => {
+                    if (scanner.current) {
+                      try {
+                        await scanner.current.stop();
+                        setScanning(false);
+                      } catch (err) {
+                        console.error("Error al cancelar escaneo", err);
+                      }
+                    }
+                  }}
+                  className="rounded-full bg-[var(--color-promocion)] px-6 py-3 text-[var(--color-blanco)] hover:bg-[var(--color-promocionHover)] transition"
+                >
+                  Cancelar escaneo
+                </button>
+              )}
+              <div
+                id="qr-reader-canjear"
+                ref={qrRef}
+                className={`mx-auto w-full ${scanning ? "my-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-2" : "hidden"}`}
+              />
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Búsqueda general */}
-      {metodo === "busqueda" && (
-        <div className="flex flex-col gap-2 mb-4">
-          <label className="tracking-wider text-[var(--color-blanco)]">
-            Buscar por nombre, teléfono o correo:
-          </label>
-          <div className="flex gap-2">
+        {/* Teléfono */}
+        {metodo === "telefono" && (
+          <div className=" bg-black/20 p-4 text-left md:p-5">
+            <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+              Teléfono del cliente
+            </p>
+            <label className="mt-3 block text-lg uppercase text-[var(--color-principal)]">
+              Buscar por número de teléfono
+            </label>
+            <div className="mt-2 flex w-full flex-col gap-2 md:flex-row">
+              <input
+                type="tel"
+                placeholder="+526531231234"
+                value={buscarPhone}
+                onChange={(e) => {
+                  let val = e.target.value.replace(/\s/g, "");
+                  if (!val.startsWith("+"))
+                    val = "+52" + val.replace(/\D/g, "");
+                  setBuscarPhone(val);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === " ") e.preventDefault();
+                }}
+                className="w-full rounded-2xl border border-white/15 bg-white px-4 py-3 text-black md:w-3/4"
+                disabled={scanning}
+              />
+              <button
+                onClick={buscarClientePorTelefono}
+                disabled={loadingTelefono || scanning}
+                className="w-full rounded-full bg-[var(--color-secundario)] px-4 py-3 font-medium text-[var(--color-negro)] hover:bg-[var(--color-secundarioHover)] disabled:opacity-50 md:w-1/4"
+              >
+                {loadingTelefono ? "Buscando..." : "Buscar"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Por tarjeta */}
+        {metodo === "tarjeta" && (
+          <div className="bg-black/20 p-4 text-left md:p-5">
+            <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+              Tarjeta física
+            </p>
+            <label className="mt-3 block tracking-wider text-[var(--color-blanco)]">
+              Ingresa número de tarjeta física:
+            </label>
             <input
               type="text"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Ej: Juan, +5265..., correo@correo.com"
-              className="flex-1 border px-3 py-1 rounded"
+              value={manualUid}
+              onChange={(e) => setManualUid(e.target.value)}
+              placeholder="12345678"
+              className="mt-2 flex-1 rounded-2xl border border-white/15 bg-white px-4 py-3 text-black"
               disabled={scanning}
             />
-            <button
-              onClick={buscarClientesGeneral}
-              className="bg-[var(--color-principal)] text-[var(--color-negro)] px-4 py-1 rounded hover:bg-[var(--color-secundarioHover)]"
-              disabled={buscandoGeneral || scanning}
-            >
-              {buscandoGeneral ? "Buscando..." : "Buscar"}
-            </button>
-          </div>
-          {resultadosBusqueda.length > 0 && (
-            <div className="mt-2 p-3 bg-slate-700 rounded border border-[var(--color-principalClaro)] text-white text-left">
-              <p className="text-2xl text-[var(--color-principal)]">
-                Resultados:
-              </p>
-              <ul className="list-disc list-inside">
-                {resultadosBusqueda.map((c) => (
-                  <li
-                    key={c.id}
-                    className="text-lg flex justify-between items-center py-1"
-                  >
-                    <span>
-                      {c.nombre || "Sin nombre"}
-                      {c.telefono ? ` - ${c.telefono}` : ""}
-                      {c.correo ? ` - ${c.correo}` : ""}
-                    </span>
-                    <button
-                      className="ml-2 bg-[var(--color-secundario)] text-[var(--color-negro)] px-2 py-1 rounded hover:bg-[var(--color-secundarioHover)]"
-                      onClick={() => {
-                        setCliente(c);
-                        setResultadosBusqueda([]);
-                        setBusqueda("");
-                      }}
-                    >
-                      Seleccionar
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!manualUid) {
+                    toast.error("Ingresa el número de tarjeta.");
+                    return;
+                  }
+                  await buscarClientePorUid(manualUid);
+                }}
+                className="w-full rounded-full bg-[var(--color-principal)] px-4 py-3 text-[var(--color-negro)] hover:bg-[var(--color-secundarioHover)]"
+                disabled={scanning}
+              >
+                Buscar tarjeta
+              </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {cliente && (
-        <div className="bg-[var(--color-fondo)] p-4 rounded shadow-md">
-          <div className="text-center text-white">
-            <p className="mb-1 text-2xl">
-              Nombre:{" "}
-              <span className="text-[var(--color-principal)]">
-                {cliente.nombre}
-              </span>
+        {/* Búsqueda general */}
+        {metodo === "busqueda" && (
+          <div className="bg-black/20 p-4 text-left md:p-5">
+            <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+              Búsqueda amplia
             </p>
-            {cliente.correo && (
-              <p className="mb-1 text-xl text-gray-200">
-                Correo:{" "}
-                <span className="text-[var(--color-secundario)]">
-                  {cliente.correo}
-                </span>
-              </p>
-            )}
-            {cliente.telefono && (
-              <p className="mb-1 text-xl text-gray-200">
-                Teléfono:{" "}
-                <span className="text-[var(--color-principal)] ">
-                  {cliente.telefono}
-                </span>
-              </p>
-            )}
-            <p className="mb-1 text-xl text-gray-200">
-              Estrellas:{" "}
-              <span className="text-[var(--color-principal)] ">
-                {cliente.estrellas}
-              </span>
-            </p>
-
-            <h3 className="text-3xl mb-2 text-[var(--color-principal)]">
-              Recompensas:
-            </h3>
-            {cliente.recompensas && cliente.recompensas.length > 0 ? (
-              cliente.recompensas.map((r, i) => (
-                <div
-                  key={i}
-                  className="grid grid-cols-3 gap-2 items-center border-b py-1"
-                >
-                  <span className="text-sm text-center text-[var(--color-principal)]">
-                    {r.mensaje || "🎁 Recompensa"}
-                  </span>
-                  <span className="text-sm text-center text-white">
-                    {" Código: "}
-                    {r.codigo}
-                  </span>
-                  {!r.canjeado && (
-                    <button
-                      onClick={() => {
-                        setRecompensaSeleccionada(r);
-                        setModalCanje(true);
-                        setTipoCanje("");
-                        setDatosCanje({
-                          montoProducto: "",
-                          producto: "",
-                          porcentajeDescuento: "",
-                          montoTotal: "",
-                          montoAntesDescuento: "",
-                          descuentoGeneral: "",
-                        });
-                      }}
-                      className="bg-[var(--color-loNuevo)] text-[var(--color-blanco)] text-sm px-3 py-1 rounded hover:bg-[var(--color-loNuevoHover)] transition"
+            <label className="mt-3 block tracking-wider text-[var(--color-blanco)]">
+              Buscar por nombre, teléfono o correo:
+            </label>
+            <div className="mt-2 flex flex-col gap-2 md:flex-row">
+              <input
+                type="text"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Ej: Juan, +5265..., correo@correo.com"
+                className="flex-1 rounded-2xl border border-white/15 bg-white px-4 py-3 text-black"
+                disabled={scanning}
+              />
+              <button
+                onClick={buscarClientesGeneral}
+                className="rounded-full bg-[var(--color-principal)] px-5 py-3 text-[var(--color-negro)] hover:bg-[var(--color-secundarioHover)]"
+                disabled={buscandoGeneral || scanning}
+              >
+                {buscandoGeneral ? "Buscando..." : "Buscar"}
+              </button>
+            </div>
+            {resultadosBusqueda.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-[var(--color-principalClaro)] bg-slate-700 p-4 text-left text-white shadow-lg">
+                <p className="text-2xl text-[var(--color-principal)]">
+                  Resultados:
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {resultadosBusqueda.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-3 py-3 text-lg"
                     >
-                      Canjear
-                    </button>
-                  )}
-                  {r.canjeado && (
-                    <span className="bg-green-100 text-[var(--color-loNuevoHover)] text-xs  px-1 py-1 rounded">
-                      {r.canjeado && " ✅ CANJEADO"}
-                    </span>
-                  )}
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-200">No tiene recompensas.</p>
+                      <button
+                        onClick={() => {
+                          setCliente(c);
+                          setResultadosBusqueda([]);
+                          setBusqueda("");
+                        }}
+                      >
+                        {c.nombre || "Sin nombre"}
+                        {c.telefono ? ` - ${c.telefono}` : ""}
+                        {c.correo ? ` - ${c.correo}` : ""}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {modalCanje && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-40">
-          <div className="bg-[var(--color-blanco)] rounded-lg shadow-lg p-6 w-full max-w-md max-h-[70vh] overflow-auto border-b-[12px] border-white relative">
-            <button
-              className="absolute top-2 right-2 text-gray-600 hover:text-[var(--color-promocion)] font-bold text-xl"
-              onClick={() => setModalCanje(false)}
-            >
-              ×
-            </button>
-            <h2 className="text-xl font-bold mb-4 text-[var(--color-principal)]">
-              Detalles del canje
-            </h2>
-            <h3 className="font-bold mb-2">Recompensa seleccionada:</h3>
-            <p className="font-bold text-[var(--color-principal)] mb-2">
-              {recompensaSeleccionada.mensaje || ""}
-            </p>
-            <h3 className="font-bold mb-2">Selecciona el tipo de canjeo:</h3>
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await canjear(recompensaSeleccionada, datosCanje);
-                setModalCanje(false);
-              }}
-              className="flex flex-col gap-3"
-            >
-              <div className="flex gap-2 mb-2">
-                <button
-                  type="button"
-                  className={`px-3 py-1 rounded  border border-[var(--color-principalClaro)] ${
-                    tipoCanje === "productoGratis"
-                      ? "bg-[var(--color-principal)] text-[var(--color-negro)]"
-                      : "bg-[var(--color-blanco)] text-[var(--color-negro)]"
-                  }`}
-                  onClick={() => setTipoCanje("productoGratis")}
-                >
-                  Producto gratis
-                </button>
-                <button
-                  type="button"
-                  className={`px-3 py-1 rounded  border border-[var(--color-principalClaro)] ${
-                    tipoCanje === "descuentoProducto"
-                      ? "bg-[var(--color-principal)] text-[var(--color-negro)]"
-                      : "bg-[var(--color-blanco)] text-[var(--color-negro)]"
-                  }`}
-                  onClick={() => setTipoCanje("descuentoProducto")}
-                >
-                  Descuento a producto
-                </button>
-                <button
-                  type="button"
-                  className={`px-3 py-1 rounded  border border-[var(--color-principalClaro)] ${
-                    tipoCanje === "descuentoGeneral"
-                      ? "bg-[var(--color-principal)] text-[var(--color-negro)]"
-                      : "bg-[var(--color-blanco)] text-[var(--color-negro)]"
-                  }`}
-                  onClick={() => setTipoCanje("descuentoGeneral")}
-                >
-                  Descuento general
-                </button>
+        {cliente && (
+          <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 shadow-lg md:p-5">
+            <div className="mb-5 grid gap-4 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 text-left md:grid-cols-[1.6fr_0.9fr] md:p-5">
+              <div className="text-white">
+                <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+                  Cliente seleccionado
+                </p>
+                <p className="mt-3 text-3xl text-[var(--color-principal)]">
+                  {cliente.nombre || "Sin nombre"}
+                </p>
+                {cliente.correo && (
+                  <p className="mt-2 text-lg text-gray-200">
+                    Correo:{" "}
+                    <span className="text-[var(--color-secundario)]">
+                      {cliente.correo}
+                    </span>
+                  </p>
+                )}
+                {cliente.telefono && (
+                  <p className="mt-1 text-lg text-gray-200">
+                    Teléfono:{" "}
+                    <span className="text-[var(--color-principal)]">
+                      {cliente.telefono}
+                    </span>
+                  </p>
+                )}
               </div>
 
-              {/* Campos según el tipo de recompensa (mantener como antes) */}
-              {tipoCanje === "productoGratis" && (
-                <>
-                  <label className="">Producto obtenido:</label>
-                  <input
-                    type="text"
-                    value={
-                      recompensaSeleccionada.mensaje ||
-                      datosCanje.producto ||
-                      ""
-                    }
-                    onChange={(e) =>
-                      setDatosCanje({ ...datosCanje, producto: e.target.value })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: Café expreso"
-                    required
-                  />
-                  <label className="">Monto del producto ($):</label>
-                  <input
-                    type="number"
-                    value={datosCanje.montoProducto}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        montoProducto: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 45"
-                    required
-                  />
-                </>
+              <div className="rounded-2xl border border-[var(--color-principal)]/20 bg-[var(--color-principal)]/10 p-4 text-center">
+                <p className="text-sm uppercase tracking-[0.22em] text-white/55">
+                  Saldo actual
+                </p>
+                <p className="mt-3 text-5xl text-[var(--color-principal)]">
+                  {puntosCliente.toFixed(2)}
+                </p>
+                <p className="mt-2 text-sm text-white/70">
+                  Sonori-puntos disponibles
+                </p>
+              </div>
+            </div>
+
+            <div className="text-left">
+              <h3 className="text-3xl text-[var(--color-principal)]">
+                Recompensas por puntos
+              </h3>
+              <p className="mt-1 text-white/70">
+                Sólo se habilitan las recompensas que el cliente ya puede pagar
+                con sus puntos.
+              </p>
+
+              {RECOMPENSAS_POR_PUNTOS.length > 0 ? (
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {RECOMPENSAS_POR_PUNTOS.map((r) => {
+                    const disponible = puntosCliente >= r.puntos;
+
+                    return (
+                      <div
+                        key={r.id}
+                        className={`rounded-2xl border p-4 shadow-sm ${
+                          disponible
+                            ? "border-[var(--color-loNuevo)]/25 bg-emerald-500/10"
+                            : "border-white/10 bg-black/20"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-2xl text-[var(--color-principal)]">
+                              {r.nombre}
+                            </p>
+                            <p className="mt-1 text-sm text-white/65">
+                              {r.descripcion}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-black/30 px-3 py-1 text-sm text-white">
+                            {r.puntos} pts
+                          </span>
+                        </div>
+
+                        <div className="mt-4">
+                          {disponible ? (
+                            <button
+                              onClick={() => {
+                                setRecompensaSeleccionada(r);
+                                setModalCanje(true);
+                                setTipoCanje("productoGratis");
+                                setDatosCanje({
+                                  montoProducto: "",
+                                  producto: r.nombre,
+                                  porcentajeDescuento: "",
+                                  montoTotal: "",
+                                  montoAntesDescuento: "",
+                                  descuentoGeneral: "",
+                                });
+                              }}
+                              className="rounded-full bg-[var(--color-loNuevo)] px-4 py-2 text-sm text-[var(--color-blanco)] transition hover:bg-[var(--color-loNuevoHover)]"
+                            >
+                              Canjear ahora
+                            </button>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-gray-100 px-3 py-2 text-xs text-gray-700">
+                              Faltan{" "}
+                              {getMissingPoints(puntosCliente, r).toFixed(2)}{" "}
+                              pts
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-gray-200">
+                  No tiene recompensas.
+                </p>
               )}
-              {tipoCanje === "descuentoProducto" && (
-                <>
-                  <label className="">Producto:</label>
-                  <input
-                    type="text"
-                    value={
-                      recompensaSeleccionada.mensaje ||
-                      datosCanje.producto ||
-                      ""
-                    }
-                    onChange={(e) =>
-                      setDatosCanje({ ...datosCanje, producto: e.target.value })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: Café expreso"
-                    required
-                  />
-                  <label className="">Monto original ($):</label>
-                  <input
-                    type="number"
-                    value={datosCanje.montoProducto}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        montoProducto: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 45"
-                    required
-                  />
-                  <label className="">Porcentaje de descuento (%):</label>
-                  <input
-                    type="number"
-                    value={datosCanje.porcentajeDescuento}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        porcentajeDescuento: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 20"
-                    required
-                  />
-                  <label className="">Monto total a pagar ($):</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={datosCanje.montoTotal}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        montoTotal: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 36"
-                  />
-                </>
-              )}
-              {tipoCanje === "descuentoGeneral" && (
-                <>
-                  <label className="">Monto total a pagar ($):</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={datosCanje.montoAntesDescuento}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        montoAntesDescuento: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 100"
-                    required
-                  />
-                  <label className="">Descuento general ($ o %):</label>
-                  <input
-                    type="text"
-                    value={datosCanje.descuentoGeneral}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        descuentoGeneral: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 20 o 20%"
-                    required
-                  />
-                  <label className="">Monto total a pagar ($):</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={datosCanje.montoTotal}
-                    onChange={(e) =>
-                      setDatosCanje({
-                        ...datosCanje,
-                        montoTotal: e.target.value,
-                      })
-                    }
-                    className="border px-3 py-1 rounded"
-                    placeholder="Ej: 80"
-                  />
-                </>
-              )}
-              <button
-                type="submit"
-                className="bg-[var(--color-loNuevo)] hover:bg-[var(--color-loNuevoHover)] transition text-[var(--color-blanco)] px-4 py-2 rounded font-bold"
-              >
-                Confirmar canje
-              </button>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {modalCanje && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-40">
+            <div className="relative max-h-[70vh] w-full max-w-md overflow-auto rounded-[1.75rem] border-b-[12px] border-white bg-[var(--color-blanco)] p-6 text-xl shadow-2xl">
+              <button
+                className="absolute top-2 right-2 text-gray-600 hover:text-[var(--color-promocion)] font-bold text-xl"
+                onClick={() => setModalCanje(false)}
+              >
+                <IoClose size={28} />
+              </button>
+              <h2 className="text-2xl font-bold mb-4 text-orange-500">
+                Canjear recompensa por puntos
+              </h2>
+              <h3 className="mb-2">Recompensa seleccionada:</h3>
+              <p className="text-orange-500 mb-2">
+                {recompensaSeleccionada.nombre || ""}
+              </p>
+              <p className="mb-3 text-sm text-gray-700">
+                Se descontarán {recompensaSeleccionada.puntos} puntos del saldo
+                del cliente.
+              </p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await canjear(recompensaSeleccionada, datosCanje);
+                  setModalCanje(false);
+                }}
+                className="flex flex-col gap-3"
+              >
+                <label className="">Producto entregado:</label>
+                <input
+                  type="text"
+                  value={datosCanje.producto || ""}
+                  onChange={(e) =>
+                    setDatosCanje({ ...datosCanje, producto: e.target.value })
+                  }
+                  className="border px-3 py-1 rounded"
+                  placeholder="Ej: Aderezo chipotle"
+                  required
+                />
+                <label className="">Monto referencial del producto ($):</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={datosCanje.montoProducto}
+                  onChange={(e) =>
+                    setDatosCanje({
+                      ...datosCanje,
+                      montoProducto: e.target.value,
+                    })
+                  }
+                  className="border px-3 py-1 rounded"
+                  placeholder="Ej: 45"
+                />
+                <button
+                  type="submit"
+                  className="bg-[var(--color-loNuevo)] hover:bg-[var(--color-loNuevoHover)] transition text-[var(--color-blanco)] px-4 py-2 rounded"
+                >
+                  Confirmar canje
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

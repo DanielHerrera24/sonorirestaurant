@@ -100,6 +100,40 @@ async function findClienteByPhone(phone) {
   return { id: docSnap.id, data: docSnap.data() };
 }
 
+async function findClienteByAuthUid(authUid) {
+  const snapshot = await db
+    .collection("clientes")
+    .where("authUid", "==", authUid)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, data: docSnap.data() };
+}
+
+async function findClienteByCorreo(correo) {
+  if (!correo) {
+    return null;
+  }
+
+  const snapshot = await db
+    .collection("clientes")
+    .where("correo", "==", correo)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, data: docSnap.data() };
+}
+
 async function generarUidUnico() {
   let existe = true;
   let uid = "";
@@ -176,10 +210,12 @@ app.post("/api/clientes/link-by-phone", linkLimiter, requireAuth, async (req, re
       await db.collection("clientes").doc(uidPersonalizado).set({
         nombre,
         telefono: phone,
-        estrellas: 1,
+        puntos: 0,
+        puntosAcumulados: 0,
         ultimaVisita: null,
         uid: uidPersonalizado,
         authUid: req.user.uid,
+        recompensas: [],
         recompensasCanjeadas: 0,
         creado: FieldValue.serverTimestamp(),
         verificado: true,
@@ -211,6 +247,74 @@ app.post("/api/clientes/link-by-phone", linkLimiter, requireAuth, async (req, re
     await db.collection("clientes").doc(cliente.id).set(updateData, { merge: true });
 
     res.json({ created: false, linked: true, clienteId: cliente.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/clientes/link-google", linkLimiter, requireAuth, async (req, res, next) => {
+  try {
+    const nombre = String(req.body?.nombre || req.user.name || "").trim();
+    const correo = String(req.body?.correo || req.user.email || "").trim();
+
+    if (!correo) {
+      res.status(400).json({
+        error: "No se recibió un correo válido desde Google.",
+        code: "missing-email",
+      });
+      return;
+    }
+
+    const clientePorAuth = await findClienteByAuthUid(req.user.uid);
+    if (clientePorAuth) {
+      res.json({ created: false, linked: true, clienteId: clientePorAuth.id });
+      return;
+    }
+
+    const clientePorCorreo = await findClienteByCorreo(correo);
+    if (clientePorCorreo) {
+      if (clientePorCorreo.data.authUid && clientePorCorreo.data.authUid !== req.user.uid) {
+        res.status(409).json({
+          error: "Este correo ya está vinculado a otra cuenta.",
+          code: "email-already-linked",
+        });
+        return;
+      }
+
+      const updateData = {
+        authUid: req.user.uid,
+        correo,
+        actualizado: FieldValue.serverTimestamp(),
+      };
+
+      if (!clientePorCorreo.data.nombre && nombre) {
+        updateData.nombre = nombre;
+      }
+
+      await db.collection("clientes").doc(clientePorCorreo.id).set(updateData, {
+        merge: true,
+      });
+
+      res.json({ created: false, linked: true, clienteId: clientePorCorreo.id });
+      return;
+    }
+
+    const uidPersonalizado = await generarUidUnico();
+    await db.collection("clientes").doc(uidPersonalizado).set({
+      nombre,
+      correo,
+      puntos: 0,
+      puntosAcumulados: 0,
+      ultimaVisita: null,
+      uid: uidPersonalizado,
+      authUid: req.user.uid,
+      recompensas: [],
+      recompensasCanjeadas: 0,
+      creado: FieldValue.serverTimestamp(),
+      verificado: true,
+    });
+
+    res.status(201).json({ created: true, linked: true, clienteId: uidPersonalizado });
   } catch (error) {
     next(error);
   }

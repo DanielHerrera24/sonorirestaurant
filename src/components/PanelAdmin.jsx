@@ -1,18 +1,7 @@
-import { useEffect, useState, useRef } from "react";
-import {
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-} from "firebase/firestore";
-import { db } from "../firebase";
+import { useEffect, useState } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import dayjs from "dayjs";
-import { MdCancel } from "react-icons/md";
-import { FaArrowUp, FaChevronDown, FaChevronUp } from "react-icons/fa";
+import { db } from "../firebase";
 import GeneradorTarjetasQR from "./GeneradorTarjetasQR";
 
 const rangos = [
@@ -28,17 +17,34 @@ const PanelAdmin = () => {
   const [hasta, setHasta] = useState(dayjs().format("YYYY-MM-DD"));
   const [visitas, setVisitas] = useState([]);
   const [recompensas, setRecompensas] = useState([]);
-  const [modalImg, setModalImg] = useState(null);
-  const [modalRecompensas, setModalRecompensas] = useState(false);
-  const [catalogo, setCatalogo] = useState([]);
-  const [editando, setEditando] = useState(null);
-  const [form, setForm] = useState({ nombre: "", descripcion: "" });
   const [clientes, setClientes] = useState([]);
-  const imgPdfRef = useRef();
+
+  const resumenTarjetas = [
+    {
+      id: "clientes",
+      label: "Personas registradas",
+      value: clientes.length,
+      accent: "text-[var(--color-principal)]",
+    },
+    {
+      id: "visitas",
+      label: "Visitas registradas",
+      value: visitas.length,
+      accent: "text-orange-400",
+    },
+    {
+      id: "recompensas",
+      label: "Recompensas canjeadas",
+      value: recompensas.length,
+      accent: "text-emerald-400",
+    },
+  ];
 
   useEffect(() => {
-    let start, end;
+    let start;
+    let end;
     const hoy = dayjs().startOf("day");
+
     if (rango === "hoy") {
       start = hoy;
       end = hoy.endOf("day");
@@ -54,560 +60,365 @@ const PanelAdmin = () => {
     }
 
     const fetchData = async () => {
-      // VISITAS
-      const qVisitas = query(
-        collection(db, "visitas"),
-        where("fecha", ">=", start.toDate()),
-        where("fecha", "<=", end.toDate())
-      );
-      const snapVisitas = await getDocs(qVisitas);
-      setVisitas(snapVisitas.docs.map((doc) => doc.data()));
+      try {
+        const qVisitas = query(
+          collection(db, "visitas"),
+          where("fecha", ">=", start.toDate()),
+          where("fecha", "<=", end.toDate())
+        );
+        const snapVisitas = await getDocs(qVisitas);
+        setVisitas(snapVisitas.docs.map((docSnap) => docSnap.data()));
 
-      // RECOMPENSAS
-      const qRecompensas = query(
-        collection(db, "recompensas"),
-        where("fechaCanje", ">=", start.toDate()),
-        where("fechaCanje", "<=", end.toDate())
-      );
-      const snapRecompensas = await getDocs(qRecompensas);
-      setRecompensas(snapRecompensas.docs.map((doc) => doc.data()));
+        const qRecompensas = query(
+          collection(db, "recompensas"),
+          where("fechaCanje", ">=", start.toDate()),
+          where("fechaCanje", "<=", end.toDate())
+        );
+        const snapRecompensas = await getDocs(qRecompensas);
+        setRecompensas(snapRecompensas.docs.map((docSnap) => docSnap.data()));
 
-      // CLIENTES REGISTRADOS
-      const qClientes = query(
-        collection(db, "clientes"),
-        where("creado", ">=", start.toDate()),
-        where("creado", "<=", end.toDate())
-      );
-      const snapClientes = await getDocs(qClientes);
-      setClientes(snapClientes.docs.map((doc) => doc.data()));
+        const qClientes = query(
+          collection(db, "clientes"),
+          where("creado", ">=", start.toDate()),
+          where("creado", "<=", end.toDate())
+        );
+        const snapClientes = await getDocs(qClientes);
+        setClientes(snapClientes.docs.map((docSnap) => docSnap.data()));
+      } catch (error) {
+        console.error("Error cargando panel admin:", error);
+      }
     };
 
     fetchData();
   }, [rango, desde, hasta]);
 
-  // Cargar catálogo al abrir modal
-  const cargarCatalogo = async () => {
-    const snap = await getDocs(collection(db, "catalogoRecompensas"));
-    setCatalogo(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  };
-
-  // Abrir modal y cargar recompensas
-  const abrirModal = () => {
-    setModalRecompensas(true);
-    cargarCatalogo();
-    setEditando(null);
-    setForm({ nombre: "", descripcion: "" });
-  };
-
-  // Guardar nueva recompensa o editar
-  const guardarRecompensa = async (e) => {
-    e.preventDefault();
-    if (!form.nombre.trim()) return;
-    if (editando) {
-      await updateDoc(doc(db, "catalogoRecompensas", editando), form);
-    } else {
-      // Calcular el siguiente orden disponible
-      const snap = await getDocs(collection(db, "catalogoRecompensas"));
-      const catalogoActual = snap.docs.map((d) => d.data());
-      const ordenMax = Math.max(
-        0,
-        ...catalogoActual.map((r) =>
-          typeof r.orden === "number" ? r.orden : 0
-        )
-      );
-      await addDoc(collection(db, "catalogoRecompensas"), {
-        ...form,
-        activo: true,
-        orden: ordenMax + 1,
-      });
-    }
-    setForm({ nombre: "", descripcion: "" });
-    setEditando(null);
-    cargarCatalogo();
-  };
-
-  // Editar recompensa
-  const editarRecompensa = (rec) => {
-    setEditando(rec.id);
-    setForm({ nombre: rec.nombre, descripcion: rec.descripcion || "" });
-  };
-
-  // Eliminar recompensa
-  const eliminarRecompensa = async (id) => {
-    if (window.confirm("¿Eliminar recompensa?")) {
-      await deleteDoc(doc(db, "catalogoRecompensas", id));
-      cargarCatalogo();
-    }
-  };
-
-  // Cerrar modal
-  const cerrarModal = () => {
-    setModalRecompensas(false);
-    setEditando(null);
-    setForm({ nombre: "", descripcion: "" });
-  };
-
-  const cambiarOrden = async (id, direccion) => {
-    // Ordena el catálogo actual
-    const ordenados = [...catalogo].sort(
-      (a, b) => (a.orden ?? 9999) - (b.orden ?? 9999)
-    );
-    const idx = ordenados.findIndex((rec) => rec.id === id);
-    if (idx === -1) return;
-
-    // Calcula el nuevo índice
-    const nuevoIdx = direccion === "up" ? idx - 1 : idx + 1;
-    if (nuevoIdx < 0 || nuevoIdx >= ordenados.length) return;
-
-    // Intercambia los valores de orden
-    const actual = ordenados[idx];
-    const otro = ordenados[nuevoIdx];
-
-    // Actualiza en Firestore ambos documentos
-    await updateDoc(doc(db, "catalogoRecompensas", actual.id), {
-      orden: otro.orden,
-    });
-    await updateDoc(doc(db, "catalogoRecompensas", otro.id), {
-      orden: actual.orden,
-    });
-
-    // Recarga el catálogo
-    cargarCatalogo();
-  };
-
   return (
-    <>
-      <div className="bg-[var(--color-negro)] text-white rounded shadow p-4 mb-4 max-w-2xl mx-auto">
-        <h3 className="text-3xl mb-2 text-[var(--color-principalHover)]">
-          Panel de Control
-        </h3>
-        <div className="flex flex-wrap gap-2 mb-4 text-lg">
-          {rangos.map((r) => (
-            <button
-              key={r.value}
-              className={`px-3 py-1 rounded ${
-                rango === r.value
-                  ? "bg-[var(--color-principal)] text-[var(--color-negro)] hover:bg-[var(--color-principalHover)]"
-                  : "bg-gray-200 hover:bg-gray-300 text-black"
-              }`}
-              onClick={() => setRango(r.value)}
-            >
-              {r.label}
-            </button>
-          ))}
-          {rango === "personalizado" && (
-            <>
-              <input
-                type="date"
-                value={desde}
-                onChange={(e) => setDesde(e.target.value)}
-                className="border rounded px-2 text-black"
-              />
-              <input
-                type="date"
-                value={hasta}
-                onChange={(e) => setHasta(e.target.value)}
-                className="border rounded px-2 text-black"
-              />
-            </>
-          )}
-        </div>
-        <div className="mb-1 text-xl">
-          <span className="tracking-wider text-white">Personas registradas:</span>{" "}
-          {clientes.length}
-        </div>
-        <div className="mb-1 text-xl">
-          <span className="tracking-wider text-white">Visitas registradas:</span>{" "}
-          {visitas.length}
-        </div>
-        <div className="mb-1 text-xl">
-          <span className="tracking-wider text-white">Recompensas canjeadas:</span>{" "}
-          {recompensas.length}
-        </div>
-
-        {/* Tabla de clientes registrados */}
-        <details className="mb-2 text-xl">
-          <summary className="cursor-pointer text-[var(--color-principal)]">
-            Ver detalle de personas registradas
-          </summary>
-          <div className="overflow-x-auto font-montserrat">
-            <table className="min-w-full text-sm mt-2">
-              <thead>
-                <tr>
-                  <th className="px-2 py-1">Fecha registro</th>
-                  <th className="px-2 py-1">Nombre</th>
-                  <th className="px-2 py-1">Correo o Tel</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clientes.map((c, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-2 py-1 max-w-[40px] overflow-x-auto">
-                      {c.creado
-                        ? dayjs(
-                            c.creado.toDate ? c.creado.toDate() : c.creado
-                          ).format("DD/MM/YYYY HH:mm")
-                        : ""}
-                    </td>
-                    <td className="px-2 py-1 max-w-[50px] overflow-x-auto">
-                      {c.nombre}
-                    </td>
-                    {c.correo ? (
-                      <td className="px-2 py-1 max-w-[100px] overflow-x-auto">
-                        {c.correo}
-                      </td>
-                    ) : (
-                      <td className="px-2 py-1 max-w-[100px] overflow-x-auto">
-                        {c.telefono}
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-
-        {/* Tabla de visitas */}
-        <details className="mb-2 text-xl">
-          <summary className="cursor-pointer text-[var(--color-principal)]">
-            Ver detalle de visitas
-          </summary>
-          {visitas.length === 0 && (
-            <div className="px-2 py-1">No hay visitas registradas.</div>
-          )}
-          <div className="overflow-x-auto font-montserrat">
-            {/* Tabla para pantallas medianas y grandes */}
-            <table className="hidden sm:table min-w-full text-sm mt-2">
-              <thead>
-                <tr>
-                  <th className="px-2 py-1">Fecha</th>
-                  <th className="px-2 py-1">Cliente</th>
-                  <th className="px-2 py-1">Monto compra</th>
-                  <th className="px-2 py-1">Puntos obtenidos</th>
-                  <th className="px-2 py-1">Puntos usados</th>
-                  <th className="px-2 py-1">Puntos finales</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visitas.map((v, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-2 py-1">
-                      {v.fecha
-                        ? dayjs(
-                            v.fecha.toDate ? v.fecha.toDate() : v.fecha
-                          ).format("DD/MM/YYYY HH:mm")
-                        : ""}
-                    </td>
-                    <td className="px-2 py-1">{v.nombre || v.clienteUid}</td>
-                    <td className="px-2 py-1">
-                      {v.montoGastado && !isNaN(Number(v.montoGastado))
-                        ? `$${Number(v.montoGastado).toFixed(2)}`
-                        : "-"}
-                    </td>
-                    <td className="px-2 py-1">
-                      {v.puntosGanados && !isNaN(Number(v.puntosGanados))
-                        ? Number(v.puntosGanados).toFixed(2)
-                        : "0"}
-                    </td>
-                    <td className="px-2 py-1">
-                      {v.puntosCanjeados && !isNaN(Number(v.puntosCanjeados))
-                        ? Number(v.puntosCanjeados).toFixed(2)
-                        : "0"}
-                    </td>
-                    <td className="px-2 py-1">
-                      {v.puntosDespues && !isNaN(Number(v.puntosDespues))
-                        ? Number(v.puntosDespues).toFixed(2)
-                        : "0"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {/* Tarjetas para móvil */}
-            <div className="sm:hidden flex flex-col gap-2 mt-2">
-              {visitas.map((v, i) => (
-                <div
-                  key={i}
-                  className="border rounded-lg p-2 bg-gray-50 shadow text-xs"
-                >
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Fecha:
-                    </span>{" "}
-                    {v.fecha
-                      ? dayjs(
-                          v.fecha.toDate ? v.fecha.toDate() : v.fecha
-                        ).format("DD/MM/YYYY HH:mm")
-                      : ""}
-                  </div>
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Cliente:
-                    </span>{" "}
-                    {v.nombre || v.clienteUid}
-                  </div>
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Monto compra:
-                    </span>{" "}
-                    {v.montoGastado && !isNaN(Number(v.montoGastado))
-                      ? `$${Number(v.montoGastado).toFixed(2)}`
-                      : "-"}
-                  </div>
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Puntos obtenidos:
-                    </span>{" "}
-                    {v.puntosGanados && !isNaN(Number(v.puntosGanados))
-                      ? Number(v.puntosGanados).toFixed(2)
-                      : "0"}
-                  </div>
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Puntos usados:
-                    </span>{" "}
-                    {v.puntosCanjeados && !isNaN(Number(v.puntosCanjeados))
-                      ? Number(v.puntosCanjeados).toFixed(2)
-                      : "0"}
-                  </div>
-                  <div>
-                    <span className=" text-[var(--color-principal)]">
-                      Puntos finales:
-                    </span>{" "}
-                    {v.puntosDespues && !isNaN(Number(v.puntosDespues))
-                      ? Number(v.puntosDespues).toFixed(2)
-                      : "0"}
-                  </div>
-                </div>
-              ))}
+    <div className="mx-auto w-full max-w-5xl text-white">
+      <div className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-[var(--color-negro)] shadow-2xl">
+        <div className="border-b border-white/10 bg-gradient-to-r from-black via-[#171717] to-[#332400] px-4 py-6 md:px-8">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h3 className="text-4xl text-[var(--color-principalHover)] md:text-5xl">
+                Panel de Control
+              </h3>
+              <p className="mt-2 max-w-2xl text-base text-white/75 md:text-lg">
+                Consulta rápido altas, visitas y canjes.
+              </p>
             </div>
-          </div>
-        </details>
 
-        {/* Tabla de recompensas */}
-        <details className="mb-2 text-xl">
-          <summary className="cursor-pointer text-[var(--color-principal)]">
-            Ver detalle de recompensas
-          </summary>
-          <div className="overflow-x-auto font-montserrat">
-            <table className="min-w-full text-sm mt-2">
-              <thead>
-                <tr>
-                  <th className="px-2 py-1">Fecha canje</th>
-                  <th className="px-2 py-1">Cliente</th>
-                  <th className="px-2 py-1">Mensaje</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recompensas.map((r, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-2 py-1">
-                      {r.fechaCanje
-                        ? dayjs(
-                            r.fechaCanje.toDate
-                              ? r.fechaCanje.toDate()
-                              : r.fechaCanje
-                          ).format("DD/MM/YYYY HH:mm")
-                        : ""}
-                    </td>
-                    <td className="px-2 py-1">{r.nombre || r.clienteUid}</td>
-                    <td className="px-2 py-1">
-                      {r.mensaje || "-"}
-                      {r.detallesCanje && (
-                        <div className="text-xs text-gray-600">
-                          {r.detallesCanje.producto && (
-                            <div>Producto: {r.detallesCanje.producto}</div>
-                          )}
-                          {r.detallesCanje.montoProducto && (
-                            <div>
-                              Monto producto: ${r.detallesCanje.montoProducto}
-                            </div>
-                          )}
-                          {r.detallesCanje.montoAntesDescuento && (
-                            <div>
-                              Monto antes de descuento: $
-                              {r.detallesCanje.montoAntesDescuento}
-                            </div>
-                          )}
-                          {r.detallesCanje.porcentajeDescuento && (
-                            <div>
-                              Descuento: {r.detallesCanje.porcentajeDescuento}%
-                            </div>
-                          )}
-                          {r.detallesCanje.descuentoGeneral && (
-                            <div>
-                              Descuento general:{" "}
-                              {r.detallesCanje.descuentoGeneral}
-                            </div>
-                          )}
-                          {r.detallesCanje.montoTotal && (
-                            <div>
-                              Total a pagar: ${r.detallesCanje.montoTotal}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-
-        <button
-          className="bg-[var(--color-principal)] text-xl text-[var(--color-negro)] hover:bg-[var(--color-principalHover)] px-4 py-2 rounded shadow my-4"
-          onClick={abrirModal}
-        >
-          Catálogo de Recompensas
-        </button>
-
-        {/* Modal de Recompensas */}
-        {modalRecompensas && (
-          <div className="fixed inset-0 bg-black bg-opacity-60 mt-20 flex items-center justify-center z-50">
-            <div className="bg-[var(--color-negro)] max-h-[70vh] border-2 border-[var(--color-principal)] rounded-lg shadow-lg p-6 w-full overflow-y-auto max-w-lg relative">
-              <button
-                className="absolute top-2 right-2 text-red-500 hover:text-[var(--color-promocion)] text-xl"
-                onClick={cerrarModal}
-              >
-                <MdCancel size={24} />
-              </button>
-              <h2 className="text-3xl mb-4 text-[var(--color-principalHover)]">
-                Catálogo de Recompensas
-              </h2>
-              <form
-                onSubmit={guardarRecompensa}
-                className="mb-4 text-lg flex flex-col gap-2"
-              >
-                <input
-                  type="text"
-                  placeholder="Nombre de la recompensa"
-                  value={form.nombre}
-                  onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-                  className="border px-3 py-1 rounded text-black"
-                  required
-                />
-                <textarea
-                  placeholder="Descripción (opcional)"
-                  value={form.descripcion}
-                  onChange={(e) =>
-                    setForm({ ...form, descripcion: e.target.value })
-                  }
-                  className="border px-3 py-1 rounded text-black"
-                />
-                <div className="flex gap-2">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <p className="mb-3 text-sm uppercase tracking-[0.22em] text-white/55">
+                Periodo analizado
+              </p>
+              <div className="flex flex-wrap gap-2 text-base">
+                {rangos.map((item) => (
                   <button
-                    type="submit"
-                    className="bg-[var(--color-loNuevo)] hover:bg-[var(--color-loNuevoHover)] text-[var(--color-negro)] px-4 py-1 rounded"
+                    key={item.value}
+                    type="button"
+                    className={`rounded-full px-4 py-2 transition ${
+                      rango === item.value
+                        ? "bg-[var(--color-principal)] text-[var(--color-negro)] shadow-lg"
+                        : "bg-white/10 text-white hover:bg-white/15"
+                    }`}
+                    onClick={() => setRango(item.value)}
                   >
-                    {editando ? "Actualizar" : "Agregar"}
+                    {item.label}
                   </button>
-                  {editando && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditando(null);
-                        setForm({ nombre: "", descripcion: "" });
-                      }}
-                      className="bg-gray-400 text-[var(--color-blanco)] px-4 py-1 rounded"
-                    >
-                      Cancelar
-                    </button>
-                  )}
+                ))}
+              </div>
+              {rango === "personalizado" && (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="date"
+                    value={desde}
+                    onChange={(e) => setDesde(e.target.value)}
+                    className="rounded-xl border border-white/15 bg-white px-3 py-2 text-black"
+                  />
+                  <input
+                    type="date"
+                    value={hasta}
+                    onChange={(e) => setHasta(e.target.value)}
+                    className="rounded-xl border border-white/15 bg-white px-3 py-2 text-black"
+                  />
                 </div>
-              </form>
-              <ul className="divide-y">
-                {catalogo
-                  .sort((a, b) => (a.orden ?? 9999) - (b.orden ?? 9999))
-                  .map((rec, idx, arr) => (
-                    <li
-                      key={rec.id}
-                      className="py-2 flex gap-1 justify-between items-center"
-                    >
-                      <div>
-                        <span className="text-xl font-medium text-[var(--color-principal)] mr-1">
-                          {rec.orden}
-                        </span>
-                        <span className="text-2xl text-orange-600">{rec.nombre}</span>
-                        {rec.descripcion && (
-                          <div className="text-md text-gray-100">
-                            {rec.descripcion}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex gap-1 items-center">
-                        {/* Botón subir */}
-                        <button
-                          disabled={idx === 0}
-                          onClick={() => cambiarOrden(rec.id, "up")}
-                          className={`text-xs px-2 py-1 rounded ${
-                            idx === 0
-                              ? "bg-gray-200 text-gray-500"
-                              : "bg-[var(--color-principal)] text-[var(--color-negro)] hover:bg-[var(--color-principalHover)]"
-                          }`}
-                          title="Subir"
-                        >
-                          <FaChevronUp />
-                        </button>
-                        {/* Botón bajar */}
-                        <button
-                          disabled={idx === arr.length - 1}
-                          onClick={() => cambiarOrden(rec.id, "down")}
-                          className={`text-xs px-2 py-1 rounded ${
-                            idx === arr.length - 1
-                              ? "bg-gray-200 text-gray-500"
-                              : "bg-[var(--color-principal)] text-[var(--color-negro)] hover:bg-[var(--color-principalHover)]"
-                          }`}
-                          title="Bajar"
-                        >
-                          <FaChevronDown />
-                        </button>
-                        <div className="flex flex-col items-end gap-1">
-                          <button
-                            onClick={() => editarRecompensa(rec)}
-                            className="text-base text-[var(--color-blanco)] bg-orange-600 hover:bg-[var(--color-secundarioHover)] px-2 py-1 rounded-full"
-                          >
-                            Editar
-                          </button>
-                          <button
-                            onClick={() => eliminarRecompensa(rec.id)}
-                            className="text-base text-[var(--color-blanco)] bg-[var(--color-promocion)] hover:bg-[var(--color-promocionHover)] px-2 py-1 rounded-full"
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          </div>
-        )}
-        <GeneradorTarjetasQR />
-      </div>
-      {modalImg && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-          <div
-            className="bg-[var(--color-blanco)] rounded-lg shadow-lg p-4 relative max-w-full max-h-full flex flex-col items-center"
-            ref={imgPdfRef}
-          >
-            <img
-              src={modalImg}
-              className="max-h-[80vh] max-w-[90vw] rounded mb-4"
-            />
-            <div className="flex gap-2">
-              <button
-                className="bg-[var(--color-promocion)] rounded text-[var(--color-blanco)] py-2 px-4 font-bold"
-                onClick={() => setModalImg(null)}
-              >
-                Cerrar
-              </button>
+              )}
             </div>
           </div>
         </div>
-      )}
-    </>
+
+        <div className="space-y-4 py-5">
+          <details className="overflow-hidden border-y border-white/10 bg-white/[0.04]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left">
+              <div>
+                <p className="text-2xl text-[var(--color-principal)]">
+                  Personas registradas
+                </p>
+              </div>
+              <span className="rounded-full bg-[var(--color-principal)] px-3 py-1 text-sm text-black">
+                {clientes.length}
+              </span>
+            </summary>
+            <div className="border-t border-white/10 px-5 py-4">
+              <div className="overflow-x-auto font-montserrat">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-white/65">
+                      <th className="px-3 py-2">Fecha registro</th>
+                      <th className="px-3 py-2">Nombre</th>
+                      <th className="px-3 py-2">Correo o Tel</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientes.map((cliente, index) => (
+                      <tr
+                        key={index}
+                        className="border-t border-white/10 align-top hover:bg-white/[0.03]"
+                      >
+                        <td className="px-3 py-3 max-w-[160px] overflow-x-auto text-white/80">
+                          {cliente.creado
+                            ? dayjs(
+                                cliente.creado.toDate
+                                  ? cliente.creado.toDate()
+                                  : cliente.creado
+                              ).format("DD/MM/YYYY HH:mm")
+                            : ""}
+                        </td>
+                        <td className="px-3 py-3 max-w-[180px] overflow-x-auto text-white">
+                          {cliente.nombre}
+                        </td>
+                        <td className="px-3 py-3 max-w-[240px] overflow-x-auto text-white/75">
+                          {cliente.correo || cliente.telefono}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          <details className="overflow-hidden border-y border-white/10 bg-white/[0.04]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left">
+              <div>
+                <p className="text-2xl text-[var(--color-principal)]">
+                  Visitas registradas
+                </p>
+              </div>
+              <span className="rounded-full bg-orange-500 px-3 py-1 text-sm text-white">
+                {visitas.length}
+              </span>
+            </summary>
+            <div className="border-t border-white/10 px-5 py-4">
+              {visitas.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 px-4 py-5 text-center text-white/65">
+                  No hay visitas registradas para este rango.
+                </div>
+              )}
+              <div className="overflow-x-auto font-montserrat">
+                <table className="hidden min-w-full text-sm sm:table">
+                  <thead>
+                    <tr className="text-left text-white/65">
+                      <th className="px-3 py-2">Fecha</th>
+                      <th className="px-3 py-2">Cliente</th>
+                      <th className="px-3 py-2">Monto compra</th>
+                      <th className="px-3 py-2">Puntos obtenidos</th>
+                      <th className="px-3 py-2">Puntos usados</th>
+                      <th className="px-3 py-2">Puntos finales</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visitas.map((visita, index) => (
+                      <tr
+                        key={index}
+                        className="border-t border-white/10 align-top hover:bg-white/[0.03]"
+                      >
+                        <td className="px-3 py-3 text-white/80">
+                          {visita.fecha
+                            ? dayjs(
+                                visita.fecha.toDate
+                                  ? visita.fecha.toDate()
+                                  : visita.fecha
+                              ).format("DD/MM/YYYY HH:mm")
+                            : ""}
+                        </td>
+                        <td className="px-3 py-3 text-white">
+                          {visita.nombre || visita.clienteUid}
+                        </td>
+                        <td className="px-3 py-3 text-white/80">
+                          {visita.montoGastado && !isNaN(Number(visita.montoGastado))
+                            ? `$${Number(visita.montoGastado).toFixed(2)}`
+                            : "-"}
+                        </td>
+                        <td className="px-3 py-3 text-white/80">
+                          {visita.puntosGanados && !isNaN(Number(visita.puntosGanados))
+                            ? Number(visita.puntosGanados).toFixed(2)
+                            : "0"}
+                        </td>
+                        <td className="px-3 py-3 text-white/80">
+                          {visita.puntosCanjeados && !isNaN(Number(visita.puntosCanjeados))
+                            ? Number(visita.puntosCanjeados).toFixed(2)
+                            : "0"}
+                        </td>
+                        <td className="px-3 py-3 text-white/80">
+                          {visita.puntosDespues && !isNaN(Number(visita.puntosDespues))
+                            ? Number(visita.puntosDespues).toFixed(2)
+                            : "0"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <div className="mt-2 flex flex-col gap-3 sm:hidden">
+                  {visitas.map((visita, index) => (
+                    <div
+                      key={index}
+                      className="rounded-2xl border border-white/10 bg-black/25 p-4 text-sm shadow"
+                    >
+                      <div className="grid gap-2 text-white/80">
+                        <div>
+                          <span className="text-[var(--color-principal)]">Fecha:</span>{" "}
+                          {visita.fecha
+                            ? dayjs(
+                                visita.fecha.toDate
+                                  ? visita.fecha.toDate()
+                                  : visita.fecha
+                              ).format("DD/MM/YYYY HH:mm")
+                            : ""}
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-principal)]">Cliente:</span>{" "}
+                          {visita.nombre || visita.clienteUid}
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-principal)]">Monto compra:</span>{" "}
+                          {visita.montoGastado && !isNaN(Number(visita.montoGastado))
+                            ? `$${Number(visita.montoGastado).toFixed(2)}`
+                            : "-"}
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-principal)]">Puntos obtenidos:</span>{" "}
+                          {visita.puntosGanados && !isNaN(Number(visita.puntosGanados))
+                            ? Number(visita.puntosGanados).toFixed(2)
+                            : "0"}
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-principal)]">Puntos usados:</span>{" "}
+                          {visita.puntosCanjeados && !isNaN(Number(visita.puntosCanjeados))
+                            ? Number(visita.puntosCanjeados).toFixed(2)
+                            : "0"}
+                        </div>
+                        <div>
+                          <span className="text-[var(--color-principal)]">Puntos finales:</span>{" "}
+                          {visita.puntosDespues && !isNaN(Number(visita.puntosDespues))
+                            ? Number(visita.puntosDespues).toFixed(2)
+                            : "0"}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <details className="overflow-hidden border-y border-white/10 bg-white/[0.04]">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-left">
+              <div>
+                <p className="text-2xl text-[var(--color-principal)]">
+                  Recompensas canjeadas
+                </p>
+              </div>
+              <span className="rounded-full bg-emerald-500 px-3 py-1 text-sm text-white">
+                {recompensas.length}
+              </span>
+            </summary>
+            <div className="border-t border-white/10 px-5 py-4">
+              <div className="overflow-x-auto font-montserrat">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-white/65">
+                      <th className="px-3 py-2">Fecha canje</th>
+                      <th className="px-3 py-2">Cliente</th>
+                      <th className="px-3 py-2">Mensaje</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recompensas.map((recompensa, index) => (
+                      <tr
+                        key={index}
+                        className="border-t border-white/10 align-top hover:bg-white/[0.03]"
+                      >
+                        <td className="px-3 py-3 text-white/80">
+                          {recompensa.fechaCanje
+                            ? dayjs(
+                                recompensa.fechaCanje.toDate
+                                  ? recompensa.fechaCanje.toDate()
+                                  : recompensa.fechaCanje
+                              ).format("DD/MM/YYYY HH:mm")
+                            : ""}
+                        </td>
+                        <td className="px-3 py-3 text-white">
+                          {recompensa.nombre || recompensa.clienteUid}
+                        </td>
+                        <td className="px-3 py-3 text-white/75">
+                          {recompensa.mensaje || "-"}
+                          {recompensa.detallesCanje && (
+                            <div className="mt-2 rounded-xl bg-black/20 p-3 text-xs text-white/65">
+                              {recompensa.detallesCanje.producto && (
+                                <div>Producto: {recompensa.detallesCanje.producto}</div>
+                              )}
+                              {recompensa.detallesCanje.montoProducto && (
+                                <div>
+                                  Monto producto: ${recompensa.detallesCanje.montoProducto}
+                                </div>
+                              )}
+                              {recompensa.detallesCanje.montoAntesDescuento && (
+                                <div>
+                                  Monto antes de descuento: $
+                                  {recompensa.detallesCanje.montoAntesDescuento}
+                                </div>
+                              )}
+                              {recompensa.detallesCanje.porcentajeDescuento && (
+                                <div>
+                                  Descuento: {recompensa.detallesCanje.porcentajeDescuento}%
+                                </div>
+                              )}
+                              {recompensa.detallesCanje.descuentoGeneral && (
+                                <div>
+                                  Descuento general: {recompensa.detallesCanje.descuentoGeneral}
+                                </div>
+                              )}
+                              {recompensa.detallesCanje.montoTotal && (
+                                <div>
+                                  Total a pagar: ${recompensa.detallesCanje.montoTotal}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-black/80 to-[#1c1c1c] p-4 md:p-5">
+            <div className="mb-4">
+              <p className="text-sm uppercase tracking-[0.24em] text-white/55">
+                Herramienta extra
+              </p>
+              <h4 className="mt-2 text-2xl text-[var(--color-principal)]">
+                Generador de tarjetas QR
+              </h4>
+            </div>
+            <GeneradorTarjetasQR />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

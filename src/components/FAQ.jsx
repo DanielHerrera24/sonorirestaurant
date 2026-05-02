@@ -3,11 +3,11 @@ import { useState } from "react";
 const preguntas = [
   {
     pregunta: "💰 ¿Cómo acumulo puntos?",
-    respuesta: "Por cada compra, acumulas cierto porcentaje del monto gastado.",
+    respuesta: "Por cada compra, acumulas los puntos correspondientes según el monto gastado.",
   },
   {
     pregunta: "🪙 ¿Para qué sirven los puntos?",
-    respuesta: "Tus puntos funcionan como dinero electrónico y puedes usarlos para pagar parte de tus compras en el restaurante.",
+    respuesta: "Tus puntos funcionan como dinero electrónico y puedes usarlos para comprar beneficios en el restaurante.",
   },
   /* {
     pregunta: "🎁 ¿Qué recompensas puedo obtener?",
@@ -15,12 +15,12 @@ const preguntas = [
   },
   {
     pregunta: "🌟 ¿Cuántos puntos necesito para una recompensa?",
-    respuesta: "Al juntar cierta cantidad de puntos, puedes canjear recompensas especiales o pagar parte de tu cuenta. Consulta las promociones vigentes.",
-  },
+    respuesta: "Al juntar cierta cantidad de puntos, puedes canjear recompensas. Consulta las promociones vigentes.",
+  }, */
   {
     pregunta: "🔄 ¿Puedo acumular varias recompensas?",
-    respuesta: "¡Sí! Las recompensas 🎁 son acumulables y puedes canjearlas cuando quieras 🕒, según tus puntos disponibles.",
-  }, */
+    respuesta: "No, las recompensas 🎁 no son acumulables, puedes canjearlas según tus puntos disponibles.",
+  },
   {
     pregunta: "📅 ¿Puedo registrar más de una visita al día?",
     respuesta: "Sí, puedes registrar tu visita por cada compra que realices.",

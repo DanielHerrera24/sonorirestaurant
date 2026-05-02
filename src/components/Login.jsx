@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
-import { db, auth } from "../firebase";
-import { doc, setDoc, collection, query, where, getDocs, serverTimestamp } from "firebase/firestore";
+import { auth } from "../firebase";
 import cafe from "../assets/Logo/Icon Sonori fondo negro.png";
 import { Link } from "react-router-dom";
 import fiestaIcon from "../assets/Logo/Icon Sonori fondo negro.png";
@@ -12,7 +11,11 @@ import PhoneAuthForm from "./PhoneAuthForm";
 import { MdCancel } from "react-icons/md";
 import Logo from "./Logo";
 import { FaBars, FaTimes } from "react-icons/fa";
-import { checkPhoneStatus, linkPhoneClient } from "../services/clientesApi";
+import {
+  checkPhoneStatus,
+  linkGoogleClient,
+  linkPhoneClient,
+} from "../services/clientesApi";
 
 export default function Login() {
   const { loginWithGoogle } = useAuth();
@@ -76,41 +79,19 @@ export default function Login() {
     try {
       const userCredential = await loginWithGoogle();
       const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      const result = await linkGoogleClient({
+        nombre: user.displayName || "",
+        correo: user.email || "",
+        token: idToken,
+      });
 
-      // Verifica si ya existe un documento en clientes con este authUid
-      const clientesRef = collection(db, "clientes");
-      const q = query(clientesRef, where("authUid", "==", user.uid));
-      const snap = await getDocs(q);
-
-      if (snap.empty) {
-        // Si no existe, genera un UID de 8 dígitos y crea el documento
-        let uid;
-        let existe = true;
-        while (existe) {
-          uid = Math.floor(10000000 + Math.random() * 90000000).toString();
-          const snapUid = await getDocs(
-            query(clientesRef, where("uid", "==", uid))
-          );
-          existe = !snapUid.empty;
-        }
-        await setDoc(doc(db, "clientes", uid), {
-          nombre: user.displayName || "",
-          correo: user.email,
-          estrellas: 1,
-          ultimaVisita: null,
-          uid: uid,
-          authUid: user.uid,
-          recompensasCanjeadas: 0,
-          creado: serverTimestamp(),
-        });
-
+      if (result.created) {
         setShowWelcome(true);
-        setLoading(false);
         return;
       }
 
       navigate("/tarjeta");
-      setLoading(false);
     } catch (err) {
       setError("Error con Google: " + err.message);
     } finally {
@@ -237,7 +218,7 @@ export default function Login() {
               </p>
               <ul className="text-lg uppercase text-[var(--color-blanco)] mb-2 space-y-1 text-left max-w-xs bg-black/40 p-3 rounded-lg shadow-inner">
                 <li>⭐ Acumula puntos con cada compra</li>
-                <li>🎁 Uso tus puntos para pagar parte de tus compras</li>
+                <li>🎁 Usa tus puntos para comprar beneficios</li>
                 <li>🪪 Solo necesitas tu tarjeta digital</li>
               </ul>
               <span className="text-xl uppercase text-white text-center">
@@ -276,7 +257,6 @@ export default function Login() {
               <FcGoogle size={22} />
               {loading ? "Cargando..." : "Iniciar sesión con Google"}
             </button>
-            <div id="recaptcha-container" className="mt-4"></div>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ Este servicio expone una API con Firebase Admin para consultar y enlazar cliente
 - `GET /health`
 - `POST /api/clientes/phone-status`
 - `POST /api/clientes/link-by-phone`
+- `POST /api/clientes/link-google`
 
 ## Configuración en Render
 
@@ -54,5 +55,16 @@ Envía un `Authorization: Bearer <firebase-id-token>` y este body:
 {
   "phone": "+526531301155",
   "nombre": "Daniel"
+}
+```
+
+### Enlazar o crear cliente con Google
+
+Envía un `Authorization: Bearer <firebase-id-token>` y este body:
+
+```json
+{
+  "nombre": "Daniel",
+  "correo": "daniel@correo.com"
 }
 ```

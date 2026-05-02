@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import "./TarjetaAnimacion.css";
+import { RECOMPENSAS_POR_PUNTOS } from "../data/recompensasPorPuntos";
 
-const nivelesRecompensa = [
-  { puntos: 50, nombre: "Bronce", descripcion: "Descuento pequeño" },
-  { puntos: 100, nombre: "Plata", descripcion: "Descuento medio" },
-  { puntos: 250, nombre: "Oro", descripcion: "Producto gratis" },
-  { puntos: 500, nombre: "Diamante", descripcion: "Combo especial" },
-];
+const nivelesRecompensa = RECOMPENSAS_POR_PUNTOS;
 
 const BarraProgresoRecompensas = ({ puntosAcumulados }) => {
   const totalNiveles = nivelesRecompensa.length;
